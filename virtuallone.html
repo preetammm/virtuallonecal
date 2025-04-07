@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Mortgage Chatbot</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(270deg, #00c9ff, #92fe9d, #1e3c72, #2a5298);
+      background-size: 800% 800%;
+      animation: gradientBG 20s ease infinite;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+      box-sizing: border-box;
+    }
+
+    @keyframes gradientBG {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    h1 {
+      color: white;
+      font-size: 34px;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    #chatbox {
+      background: rgba(255, 255, 255, 0.2);
+      backdrop-filter: blur(12px);
+      border-radius: 20px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+      width: 100%;
+      max-width: 850px;
+      height: 600px;
+      padding: 25px;
+      overflow-y: auto;
+      position: relative;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    #chatbox::-webkit-scrollbar { display: none; }
+
+    .bot, .user {
+      margin: 16px 0;
+      max-width: 80%;
+      padding: 14px 20px;
+      border-radius: 16px;
+      line-height: 1.6;
+      animation: fadeIn 0.4s ease-in;
+    }
+
+    .bot {
+      background: #e3f2fd;
+      color: #0d47a1;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .user {
+      background: #d1c4e9;
+      color: #4a148c;
+      margin-left: auto;
+      text-align: right;
+    }
+
+    .input-area {
+      margin-top: 20px;
+      display: flex;
+      justify-content: center;
+      width: 100%;
+      max-width: 850px;
+      gap: 10px;
+    }
+
+    input[type="text"] {
+      flex-grow: 1;
+      padding: 14px 18px;
+      font-size: 16px;
+      border: none;
+      border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      outline: none;
+    }
+
+    button {
+      padding: 14px 20px;
+      font-size: 16px;
+      background-color: #4caf50;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    button:hover { background-color: #388e3c; }
+
+    .typing-indicator {
+      display: inline-block;
+      padding: 12px;
+      background: #fff3e0;
+      color: #ef6c00;
+      border-radius: 14px;
+      font-style: italic;
+      font-size: 14px;
+      animation: blink 1s step-end infinite;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes blink { 50% { opacity: 0.6; } }
+
+    .robo {
+      width: 50px;
+      height: 50px;
+    }
+
+    table {
+      width: 100%;
+      max-width: 800px;
+      border-collapse: collapse;
+      margin: 10px 0;
+      font-size: 14px;
+    }
+
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: center;
+      background-color: #f1f8e9;
+    }
+
+    th {
+      background-color: #aed581;
+    }
+
+    .refresh-button {
+      background-color: #ff7043;
+    }
+
+    .refresh-button:hover {
+      background-color: #e64a19;
+    }
+  </style>
+</head>
+<body>
+  <h1>🤖 Mortgage Calculator Chatbot</h1>
+  <div id="chatbox">
+    <div class="bot">
+      <lottie-player src="https://lottie.host/f12ad5f3-5011-4ae0-9cde-3811cf953fb2/dfiC8Dd79J.json" background="transparent" speed="1" loop autoplay class="robo"></lottie-player>
+      Hello! I'm your Mortgage Bot. First, please tell me the loan amount (in ₹).
+    </div>
+  </div>
+
+  <div class="input-area">
+    <input type="text" id="userInput" placeholder="Type your answer...">
+    <button onclick="handleUserInput()">Send</button>
+    <button class="refresh-button" onclick="location.reload()">🔄 Refresh</button>
+  </div>
+
+  <canvas id="interestChart" width="400" height="200" style="margin-top: 20px; display: none;"></canvas>
+
+  <script>
+    let step = 0;
+    let loan = 0, rate = 0, years = 0;
+    let promptType = "si";
+    let currency = '₹';
+    let emiSchedule = [];
+    let emi = 0;
+    let monthIndex = 0;
+
+    function speak(text) {
+      const synth = window.speechSynthesis;
+      if (synth.speaking) synth.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-IN';
+      synth.speak(utterance);
+    }
+
+    function appendMessage(sender, message, animated = false, speakMsg = true) {
+      const div = document.createElement("div");
+      div.className = sender;
+
+      if (sender === "bot" && animated) {
+        div.innerHTML = `
+          <lottie-player src="https://lottie.host/f12ad5f3-5011-4ae0-9cde-3811cf953fb2/dfiC8Dd79J.json" background="transparent" speed="1" loop autoplay class="robo"></lottie-player>
+          ${message}`;
+      } else {
+        div.innerHTML = message;
+      }
+
+      document.getElementById("chatbox").appendChild(div);
+      document.getElementById("chatbox").scrollTop = document.getElementById("chatbox").scrollHeight;
+
+      if (sender === "bot" && speakMsg) speak(message.replace(/<[^>]+>/g, ''));
+    }
+
+    function appendTypingIndicator() {
+      const typing = document.createElement("div");
+      typing.id = "typingIndicator";
+      typing.className = "typing-indicator";
+      typing.innerText = "Bot is typing...";
+      document.getElementById("chatbox").appendChild(typing);
+      document.getElementById("chatbox").scrollTop = document.getElementById("chatbox").scrollHeight;
+    }
+
+    function removeTypingIndicator() {
+      const typing = document.getElementById("typingIndicator");
+      if (typing) typing.remove();
+    }
+
+    function handleUserInput() {
+      const input = document.getElementById("userInput").value.trim().toLowerCase();
+      if (!input) return;
+
+      appendMessage("user", input, false, false);
+      document.getElementById("userInput").value = "";
+
+      appendTypingIndicator();
+
+      setTimeout(() => {
+        removeTypingIndicator();
+
+        if (step === 0) {
+          loan = parseFloat(input);
+          if (isNaN(loan) || loan <= 0) {
+            appendMessage("bot", "❌ Please enter a valid loan amount.", true);
+            return;
+          }
+          appendMessage("bot", `💸 Got it! Loan amount is ${currency}${loan.toFixed(2)}.\nNow, is your interest type <strong>SI</strong> or <strong>CI</strong>?`, true);
+          step++;
+        } else if (step === 1) {
+          const type = input;
+          if (type !== "si" && type !== "ci") {
+            appendMessage("bot", "❌ Please enter either 'SI' or 'CI' for interest type.", true);
+            return;
+          }
+          promptType = type;
+          appendMessage("bot", "📈 Enter the annual interest rate (in %)", true);
+          step++;
+        } else if (step === 2) {
+          rate = parseFloat(input);
+          if (isNaN(rate) || rate < 0) {
+            appendMessage("bot", "❌ Please enter a valid interest rate.", true);
+            return;
+          }
+          appendMessage("bot", "📅 Finally, enter the loan term (in years)", true);
+          step++;
+        } else if (step === 3) {
+          years = parseInt(input);
+          if (isNaN(years) || years <= 0) {
+            appendMessage("bot", "❌ Please enter a valid number of years.", true);
+            return;
+          }
+
+          let interest = 0;
+          let total = 0;
+          if (promptType === "si") {
+            interest = (loan * rate * years) / 100;
+            total = loan + interest;
+            appendMessage("bot", `📊 Simple Interest: <strong>${currency}${interest.toFixed(2)}</strong><br>💰 Total Payment: <strong>${currency}${total.toFixed(2)}</strong>`, true);
+          } else {
+            total = loan * Math.pow(1 + rate / 100, years);
+            interest = total - loan;
+            appendMessage("bot", `📊 Compound Interest: <strong>${currency}${interest.toFixed(2)}</strong><br>💰 Total Payment: <strong>${currency}${total.toFixed(2)}</strong>`, true);
+          }
+
+          emi = total / (years * 12);
+          generateEMISchedule(total);
+          renderChart(loan, interest);
+          showNextEMIChunk(); // First 12 months
+          step = 4;
+        } else if (step === 4) {
+          if (input === "yes") {
+            showNextEMIChunk();
+          } else {
+            appendMessage("bot", "✅ Alright! You can restart anytime using the Refresh button.", true);
+            step = 0;
+          }
+        }
+      }, 1000);
+    }
+
+    function generateEMISchedule(totalPayment) {
+      emiSchedule = [];
+      const totalMonths = years * 12;
+      let balance = totalPayment;
+
+      for (let i = 1; i <= totalMonths; i++) {
+        emiSchedule.push({
+          month: i,
+          emi: emi.toFixed(2),
+          balance: (balance - emi * i).toFixed(2)
+        });
+      }
+
+      monthIndex = 0;
+    }
+
+    function showNextEMIChunk() {
+      let rows = `
+        <table>
+          <tr><th>Month</th><th>EMI</th><th>Balance</th></tr>
+      `;
+      for (let i = 0; i < 12 && monthIndex < emiSchedule.length; i++, monthIndex++) {
+        const row = emiSchedule[monthIndex];
+        rows += `<tr><td>${row.month}</td><td>${currency}${row.emi}</td><td>${currency}${row.balance}</td></tr>`;
+      }
+      rows += `</table>`;
+      appendMessage("bot", rows, false, false);
+
+      if (monthIndex < emiSchedule.length) {
+        appendMessage("bot", "📆 Would you like to see the next 12 months? (yes/no)", true);
+        step = 4;
+      } else {
+        appendMessage("bot", "🎉 You've seen the full EMI schedule. Use Refresh to start over.", true);
+        step = 0;
+      }
+    }
+
+    function renderChart(principal, interest) {
+      const ctx = document.getElementById('interestChart');
+      ctx.style.display = 'block';
+      new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels: ['Principal', 'Interest'],
+          datasets: [{
+            data: [principal, interest],
+            backgroundColor: ['#42a5f5', '#ef5350'],
+          }]
+        },
+        options: {
+          plugins: {
+            legend: {
+              display: true,
+              position: 'bottom'
+            }
+          }
+        }
+      });
+    }
+
+    document.getElementById("userInput").addEventListener("keydown", function(event) {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        handleUserInput();
+      }
+    });
+  </script>
+</body>
+</html>
